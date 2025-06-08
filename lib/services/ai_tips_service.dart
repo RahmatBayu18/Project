@@ -9,7 +9,7 @@ class AITipsService {
 
   AITipsService() {
     _model = GenerativeModel(
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash',
       apiKey: _apiKey,
       generationConfig: GenerationConfig(
         temperature: 0.7,
@@ -49,7 +49,7 @@ class AITipsService {
 
     return '''
 Anda adalah seorang psikolog yang berpengalaman dalam memberikan saran kesehatan mental. 
-Berdasarkan data tracking mood berikut dari 10 hari terakhir, berikan 1 tips praktis dan personal dalam bahasa Indonesia.
+Berdasarkan data tracking mood berikut dari 10 hari terakhir, berikan 1 tips praktis dan personal dalam bahasa Indonesia gaul.
 
 Data mood (dari terbaru ke terlama):
 ${_formatMoodData(moods)}
