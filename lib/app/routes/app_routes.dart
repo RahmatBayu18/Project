@@ -6,8 +6,3 @@ abstract class Routes {
   static const DASHBOARD = '/dashboard';
   static const HOME = '/home';
 }
-
-abstract class _Paths {
-  _Paths._();
-  static const HOME = '/home';
-}
