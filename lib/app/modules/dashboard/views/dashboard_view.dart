@@ -806,125 +806,320 @@ class DashboardView extends StatelessWidget {
     );
   }
 
+  // Widget _buildEnhancedWellnessTip() {
+  //   final tips = [
+  //     {
+  //       'title': 'Daily Reflection',
+  //       'content':
+  //           'Take a moment each day to reflect on your emotions and what influences them. This helps build emotional awareness.',
+  //       'icon': Icons.self_improvement,
+  //       'colors': [const Color(0xFFFF9A8B), const Color(0xFFA8E6CF)],
+  //     },
+  //     {
+  //       'title': 'Music Therapy',
+  //       'content':
+  //           'Listen to music that matches or improves your current mood for better emotional balance and mental clarity.',
+  //       'icon': Icons.music_note,
+  //       'colors': [const Color(0xFF667EEA), const Color(0xFF764BA2)],
+  //     },
+  //     {
+  //       'title': 'Pattern Recognition',
+  //       'content':
+  //           'Regular tracking helps identify triggers and patterns in your emotional well-being, leading to better self-understanding.',
+  //       'icon': Icons.trending_up,
+  //       'colors': [const Color(0xFF11998E), const Color(0xFF38EF7D)],
+  //     },
+  //     {
+  //       'title': 'Mindful Breathing',
+  //       'content':
+  //           'Practice deep breathing exercises when you feel overwhelmed. It helps regulate emotions and reduce stress.',
+  //       'icon': Icons.air,
+  //       'colors': [const Color(0xFF4ECDC4), const Color(0xFF44A08D)],
+  //     },
+  //   ];
+
+  //   final currentTip = tips[DateTime.now().day % tips.length];
+
+  //   return Container(
+  //     width: double.infinity,
+  //     padding: const EdgeInsets.all(28),
+  //     decoration: BoxDecoration(
+  //       gradient: LinearGradient(
+  //         begin: Alignment.topLeft,
+  //         end: Alignment.bottomRight,
+  //         colors: currentTip['colors'] as List<Color>,
+  //       ),
+  //       borderRadius: BorderRadius.circular(24),
+  //       boxShadow: [
+  //         BoxShadow(
+  //           color: (currentTip['colors'] as List<Color>).first.withOpacity(0.3),
+  //           blurRadius: 20,
+  //           offset: const Offset(0, 10),
+  //         ),
+  //       ],
+  //     ),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Row(
+  //           children: [
+  //             Container(
+  //               padding: const EdgeInsets.all(14),
+  //               decoration: BoxDecoration(
+  //                 color: Colors.white.withOpacity(0.2),
+  //                 borderRadius: BorderRadius.circular(16),
+  //               ),
+  //               child: Icon(
+  //                 currentTip['icon'] as IconData,
+  //                 color: Colors.white,
+  //                 size: 28,
+  //               ),
+  //             ),
+  //             const SizedBox(width: 16),
+  //             const Expanded(
+  //               child: Text(
+  //                 'Wellness Tip',
+  //                 style: TextStyle(
+  //                   color: Colors.white,
+  //                   fontSize: 20,
+  //                   fontWeight: FontWeight.bold,
+  //                 ),
+  //               ),
+  //             ),
+  //             Container(
+  //               padding: const EdgeInsets.symmetric(
+  //                 horizontal: 12,
+  //                 vertical: 6,
+  //               ),
+  //               decoration: BoxDecoration(
+  //                 color: Colors.white.withOpacity(0.2),
+  //                 borderRadius: BorderRadius.circular(20),
+  //               ),
+  //               child: const Text(
+  //                 'Daily',
+  //                 style: TextStyle(
+  //                   color: Colors.white,
+  //                   fontSize: 12,
+  //                   fontWeight: FontWeight.w500,
+  //                 ),
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //         const SizedBox(height: 20),
+  //         Text(
+  //           currentTip['title'] as String,
+  //           style: const TextStyle(
+  //             color: Colors.white,
+  //             fontSize: 18,
+  //             fontWeight: FontWeight.bold,
+  //           ),
+  //         ),
+  //         const SizedBox(height: 12),
+  //         Text(
+  //           currentTip['content'] as String,
+  //           style: TextStyle(
+  //             color: Colors.white.withOpacity(0.9),
+  //             fontSize: 15,
+  //             height: 1.6,
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
+
   Widget _buildEnhancedWellnessTip() {
-    final tips = [
-      {
-        'title': 'Daily Reflection',
-        'content':
-            'Take a moment each day to reflect on your emotions and what influences them. This helps build emotional awareness.',
-        'icon': Icons.self_improvement,
-        'colors': [const Color(0xFFFF9A8B), const Color(0xFFA8E6CF)],
-      },
-      {
-        'title': 'Music Therapy',
-        'content':
-            'Listen to music that matches or improves your current mood for better emotional balance and mental clarity.',
-        'icon': Icons.music_note,
-        'colors': [const Color(0xFF667EEA), const Color(0xFF764BA2)],
-      },
-      {
-        'title': 'Pattern Recognition',
-        'content':
-            'Regular tracking helps identify triggers and patterns in your emotional well-being, leading to better self-understanding.',
-        'icon': Icons.trending_up,
-        'colors': [const Color(0xFF11998E), const Color(0xFF38EF7D)],
-      },
-      {
-        'title': 'Mindful Breathing',
-        'content':
-            'Practice deep breathing exercises when you feel overwhelmed. It helps regulate emotions and reduce stress.',
-        'icon': Icons.air,
-        'colors': [const Color(0xFF4ECDC4), const Color(0xFF44A08D)],
-      },
-    ];
+    final dc = Get.find<DashboardController>();
 
-    final currentTip = tips[DateTime.now().day % tips.length];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: currentTip['colors'] as List<Color>,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: (currentTip['colors'] as List<Color>).first.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  currentTip['icon'] as IconData,
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              const Expanded(
-                child: Text(
-                  'Wellness Tip',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Daily',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
+    return Obx(
+      () => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF667EEA),
+              const Color(0xFF764BA2),
+              const Color(0xFFF093FB),
             ],
           ),
-          const SizedBox(height: 20),
-          Text(
-            currentTip['title'] as String,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF667EEA).withOpacity(0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            currentTip['content'] as String,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.9),
-              fontSize: 15,
-              height: 1.6,
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.psychology_alt,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Text(
+                    'AI Personal Tips',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (dc.isLoadingTip.value)
+                  Container(
+                    width: 20,
+                    height: 20,
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                else
+                  GestureDetector(
+                    onTap: dc.refreshAITip,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.refresh,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            if (dc.isLoadingTip.value)
+              Container(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      // Tambahkan ini
+                      child: Text(
+                        'AI sedang menganalisis mood Anda...',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.auto_awesome,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'Berdasarkan 10 mood terakhir',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    dc.aiTip.value,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.95),
+                      fontSize: 15,
+                      height: 1.6,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (dc.tipError.value.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_outlined,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                dc.tipError.value,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
