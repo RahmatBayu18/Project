@@ -7,6 +7,7 @@ import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'dart:typed_data';
 
 import '../controllers/home_controller.dart';
+import '../../home/views/mood_history_screen.dart';
 
 typedef FaceList = List<Face>;
 
@@ -17,15 +18,21 @@ class MoodScannerScreen extends StatefulWidget {
   State<MoodScannerScreen> createState() => _MoodScannerScreenState();
 }
 
-class _MoodScannerScreenState extends State<MoodScannerScreen> {
+class _MoodScannerScreenState extends State<MoodScannerScreen>
+    with TickerProviderStateMixin {
   late List<CameraDescription> _cameras;
   late CameraController _cameraController;
   bool _isCameraInitialized = false;
   bool _scanRequested = false;
   int _currentCameraIndex = 0;
 
-  String _mood = 'No Face Detected';
-  String _music = 'No recommendation';
+  String _mood = 'Ready to scan';
+  String _music = 'Position your face in the frame';
+
+  late AnimationController _pulseController;
+  late AnimationController _scanController;
+  late Animation<double> _pulseAnimation;
+  late Animation<double> _scanAnimation;
 
   final FaceDetector _faceDetector = FaceDetector(
     options: FaceDetectorOptions(
@@ -39,13 +46,54 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
     _initializeCamera();
   }
 
+  void _initializeAnimations() {
+    _pulseController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _scanController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    _scanAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _scanController, curve: Curves.easeInOut),
+    );
+  }
+
   Future<void> _initializeCamera() async {
-    _cameras = await availableCameras();
-    if (_cameras.isNotEmpty) {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) {
+        throw CameraException(
+          'No cameras found',
+          'Ensure camera permission is granted.',
+        );
+      }
+
+      _currentCameraIndex = _cameras.indexWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.front,
+      );
+
+      if (_currentCameraIndex == -1) {
+        _currentCameraIndex = _cameras.indexWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.back,
+        );
+      }
+
       await _startController(_cameras[_currentCameraIndex]);
+    } catch (e) {
+      debugPrint('Error initializing camera: $e');
+      setState(() => _isCameraInitialized = false);
     }
   }
 
@@ -54,8 +102,12 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
     try {
       await _cameraController.initialize();
       await _cameraController.startImageStream(_processCameraImage);
+
       if (!mounted) return;
-      setState(() => _isCameraInitialized = true);
+
+      setState(() {
+        _isCameraInitialized = true;
+      });
     } on CameraException catch (e) {
       debugPrint('Error initializing camera: $e');
       setState(() => _isCameraInitialized = false);
@@ -94,7 +146,11 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
   }
 
   Future<void> _processCameraImage(CameraImage image) async {
-    if (!_isCameraInitialized) return;
+    if (!_isCameraInitialized) {
+      debugPrint('Camera not initialized yet');
+      return;
+    }
+
     final inputImage = _inputImageFromCameraImage(image);
     try {
       final faces = await _faceDetector.processImage(inputImage);
@@ -124,32 +180,87 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
           }
         } else {
           detectedMood = 'No Face Detected';
-          recommendedMusic = 'No recommendation';
+          recommendedMusic = 'Please position your face properly';
         }
         setState(() {
           _mood = detectedMood;
           _music = recommendedMusic;
         });
-        // Simpan record
+        // Save record
         if (Get.isRegistered<HomeController>()) {
           Get.find<HomeController>().addMood(_mood, _music);
         }
         _scanRequested = false;
+        _scanController.reset();
+
+        // Haptic feedback
+        HapticFeedback.mediumImpact();
       }
     } catch (e, stk) {
       debugPrint('Error during face detection: $e\n$stk');
       if (_scanRequested) {
         setState(() {
           _mood = 'Error detecting';
-          _music = 'Please retry';
+          _music = 'Please retry scanning';
         });
         _scanRequested = false;
+        _scanController.reset();
       }
+    }
+  }
+
+  String _getMoodEmoji(String mood) {
+    switch (mood.toLowerCase()) {
+      case 'happy':
+        return '😊';
+      case 'sleepy':
+        return '😴';
+      case 'neutral':
+      case 'neutral/serious':
+        return '😐';
+      case 'sad':
+        return '😢';
+      case 'angry':
+        return '😠';
+      case 'no face detected':
+        return '🤔';
+      case 'error detecting':
+        return '❌';
+      case 'scanning...':
+        return '🔍';
+      default:
+        return '🎭';
+    }
+  }
+
+  Color _getMoodColor(String mood) {
+    switch (mood.toLowerCase()) {
+      case 'happy':
+        return const Color(0xFF10B981);
+      case 'sleepy':
+        return const Color(0xFF6366F1);
+      case 'neutral':
+      case 'neutral/serious':
+        return const Color(0xFF6B7280);
+      case 'sad':
+        return const Color(0xFF3B82F6);
+      case 'angry':
+        return const Color(0xFFEF4444);
+      case 'no face detected':
+        return const Color(0xFFEAB308);
+      case 'error detecting':
+        return const Color(0xFFDC2626);
+      case 'scanning...':
+        return const Color(0xFF8B5CF6);
+      default:
+        return const Color(0xFF6366F1);
     }
   }
 
   @override
   void dispose() {
+    _pulseController.dispose();
+    _scanController.dispose();
     _cameraController.stopImageStream();
     _cameraController.dispose();
     _faceDetector.close();
@@ -160,10 +271,41 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final height = MediaQuery.of(context).size.height;
+
+    if (!_isCameraInitialized) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Container(
+          color: Colors.black,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                  strokeWidth: 3,
+                ),
+                SizedBox(height: 20),
+                Text(
+                  'Initializing Camera...',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
+          // Camera Preview
           if (_isCameraInitialized)
             SizedBox(
               width: width,
@@ -178,7 +320,53 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
               ),
             )
           else
-            const Center(child: CircularProgressIndicator()),
+            Container(
+              width: width,
+              height: height,
+              color: Colors.black,
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFF6366F1),
+                      ),
+                      strokeWidth: 3,
+                    ),
+                    SizedBox(height: 20),
+                    Text(
+                      'Initializing Camera...',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Dark overlay
+          Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.3),
+                  Colors.transparent,
+                  Colors.transparent,
+                  Colors.black.withOpacity(0.5),
+                ],
+              ),
+            ),
+          ),
+
+          // Face detection overlay
           if (_isCameraInitialized && _detectedFaces.isNotEmpty)
             Positioned.fill(
               child: CustomPaint(
@@ -194,55 +382,140 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
                 ),
               ),
             ),
-          Positioned(top: 50, left: 20, right: 20, child: _buildResultCard()),
+
+          // Scanning overlay
+          if (_scanRequested)
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _scanAnimation,
+                builder: (context, child) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: [
+                          0.0,
+                          _scanAnimation.value - 0.1,
+                          _scanAnimation.value,
+                          _scanAnimation.value + 0.1,
+                          1.0,
+                        ],
+                        colors: [
+                          Colors.transparent,
+                          Colors.transparent,
+                          const Color(0xFF6366F1).withOpacity(0.3),
+                          Colors.transparent,
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+          // Top Status Bar
           Positioned(
-            bottom: 100,
+            top: MediaQuery.of(context).padding.top + 20,
+            left: 20,
+            right: 20,
+            child: _buildStatusCard(),
+          ),
+
+          // Center Frame Guide
+          Positioned.fill(
+            child: Center(
+              child: AnimatedBuilder(
+                animation: _pulseAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _detectedFaces.isEmpty ? _pulseAnimation.value : 1.0,
+                    child: Container(
+                      width: 250,
+                      height: 300,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color:
+                              _detectedFaces.isEmpty
+                                  ? Colors.white.withOpacity(0.5)
+                                  : const Color(0xFF10B981),
+                          width: 3,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow:
+                            _detectedFaces.isEmpty
+                                ? []
+                                : [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF10B981,
+                                    ).withOpacity(0.3),
+                                    blurRadius: 20,
+                                    spreadRadius: 5,
+                                  ),
+                                ],
+                      ),
+                      child:
+                          _detectedFaces.isEmpty
+                              ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.face_outlined,
+                                      size: 60,
+                                      color: Colors.white.withOpacity(0.7),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Position your face\nin the frame',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.8),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                              : null,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // Bottom Controls
+          Positioned(
+            bottom: MediaQuery.of(context).padding.bottom + 40,
             left: 40,
             right: 40,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                ElevatedButton.icon(
-                  onPressed: _switchCamera,
-                  icon: const Icon(Icons.cameraswitch, color: Colors.amber),
-                  label: const Text(
-                    'Switch',
-                    style: TextStyle(color: Colors.amber),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
+                // Switch Camera Button
+                _buildControlButton(
+                  icon: Icons.flip_camera_ios,
+                  label: 'Switch',
+                  onPressed: _cameras.length > 1 ? _switchCamera : null,
+                  isSecondary: true,
                 ),
-                ElevatedButton.icon(
+
+                // Scan Button
+                _buildScanButton(),
+
+                // History Button
+                _buildControlButton(
+                  icon: Icons.history,
+                  label: 'History',
                   onPressed: () {
-                    if (_isCameraInitialized) {
-                      setState(() {
-                        _scanRequested = true;
-                        _mood = 'Scanning...';
-                        _music = 'Please wait...';
-                      });
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Camera not ready')),
-                      );
-                    }
+                    // Navigasi langsung ke MoodHistoryScreen tanpa dependency ke HomeController
+                    Get.to(() => const MoodHistoryScreen());
                   },
-                  icon: const Icon(Icons.search, color: Colors.amber),
-                  label: const Text(
-                    'Scan Mood',
-                    style: TextStyle(color: Colors.amber),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
+                  isSecondary: true,
                 ),
               ],
             ),
@@ -252,35 +525,242 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
     );
   }
 
-  Widget _buildResultCard() {
-    final isError = _mood.toLowerCase().startsWith('error');
+  Widget _buildStatusCard() {
+    final moodColor = _getMoodColor(_mood);
+    final moodEmoji = _getMoodEmoji(_mood);
+    final isError = _mood.toLowerCase().contains('error');
+    final isScanning = _mood.toLowerCase().contains('scanning');
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Mood: $_mood',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isError ? Colors.red : Colors.black,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Music Recommendation:\n$_music',
-            style: TextStyle(
-              fontSize: 16,
-              color: isError ? Colors.redAccent : Colors.black87,
-            ),
+        color: Colors.white.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 5),
           ),
         ],
+        border: Border.all(color: moodColor.withOpacity(0.3), width: 2),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: moodColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(
+                    color: moodColor.withOpacity(0.3),
+                    width: 2,
+                  ),
+                ),
+                child: Center(
+                  child:
+                      isScanning
+                          ? SizedBox(
+                            width: 30,
+                            height: 30,
+                            child: CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                moodColor,
+                              ),
+                              strokeWidth: 3,
+                            ),
+                          )
+                          : Text(
+                            moodEmoji,
+                            style: const TextStyle(fontSize: 30),
+                          ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Current Mood',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _mood,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: moodColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (!isScanning && _mood != 'Ready to scan') ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: moodColor.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: moodColor.withOpacity(0.2), width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.music_note, size: 18, color: moodColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _music,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScanButton() {
+    return GestureDetector(
+      onTap: () {
+        if (_isCameraInitialized && !_scanRequested) {
+          setState(() {
+            _scanRequested = true;
+            _mood = 'Scanning...';
+            _music = 'Analyzing your expression...';
+          });
+          _scanController.forward();
+          HapticFeedback.lightImpact();
+        } else if (!_isCameraInitialized) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Camera not ready'),
+              backgroundColor: Colors.red[600],
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          gradient:
+              _scanRequested
+                  ? LinearGradient(
+                    colors: [const Color(0xFF8B5CF6), const Color(0xFF6366F1)],
+                  )
+                  : LinearGradient(
+                    colors: [const Color(0xFF6366F1), const Color(0xFF8B5CF6)],
+                  ),
+          borderRadius: BorderRadius.circular(40),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF6366F1).withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 3),
+        ),
+        child:
+            _scanRequested
+                ? const Center(
+                  child: SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      strokeWidth: 3,
+                    ),
+                  ),
+                )
+                : const Icon(
+                  Icons.center_focus_strong,
+                  color: Colors.white,
+                  size: 40,
+                ),
+      ),
+    );
+  }
+
+  Widget _buildControlButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+    bool isSecondary = false,
+  }) {
+    return GestureDetector(
+      onTap:
+          onPressed != null
+              ? () {
+                HapticFeedback.lightImpact();
+                onPressed();
+              }
+              : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        decoration: BoxDecoration(
+          color:
+              isSecondary
+                  ? Colors.white.withOpacity(0.9)
+                  : const Color(0xFF6366F1),
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(
+              color: (isSecondary ? Colors.black : const Color(0xFF6366F1))
+                  .withOpacity(0.2),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
+          border:
+              isSecondary
+                  ? Border.all(color: Colors.grey.withOpacity(0.3), width: 1)
+                  : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isSecondary ? Colors.grey[700] : Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSecondary ? Colors.grey[700] : Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -299,11 +779,19 @@ class FacePainter extends CustomPainter {
     final paint =
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3
-          ..color = Colors.greenAccent;
+          ..strokeWidth = 4
+          ..color = const Color(0xFF10B981);
+
+    final shadowPaint =
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8
+          ..color = const Color(0xFF10B981).withOpacity(0.3);
+
     final imageAR = imageSize.width / imageSize.height;
     final widgetAR = widgetSize.width / widgetSize.height;
     double scaleX, scaleY, offsetX = 0, offsetY = 0;
+
     if (imageAR > widgetAR) {
       scaleY = widgetSize.height / imageSize.height;
       scaleX = scaleY;
@@ -313,18 +801,96 @@ class FacePainter extends CustomPainter {
       scaleY = scaleX;
       offsetY = (widgetSize.height - imageSize.height * scaleY) / 2;
     }
+
     for (var face in faces) {
       double left = face.boundingBox.left * scaleX + offsetX;
       double right = face.boundingBox.right * scaleX + offsetX;
       double top = face.boundingBox.top * scaleY + offsetY;
       double bottom = face.boundingBox.bottom * scaleY + offsetY;
+
       if (isFront) {
         final temp = left;
         left = widgetSize.width - right;
         right = widgetSize.width - temp;
       }
-      canvas.drawRect(Rect.fromLTRB(left, top, right, bottom), paint);
+
+      final rect = Rect.fromLTRB(left, top, right, bottom);
+      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(15));
+
+      // Draw shadow
+      canvas.drawRRect(rrect, shadowPaint);
+      // Draw main border
+      canvas.drawRRect(rrect, paint);
+
+      // Draw corner indicators
+      _drawCornerIndicators(canvas, rect);
     }
+  }
+
+  void _drawCornerIndicators(Canvas canvas, Rect rect) {
+    final paint =
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..color = const Color(0xFF10B981);
+
+    final fillPaint =
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = const Color(0xFF10B981);
+
+    const cornerLength = 20.0;
+
+    // Top-left corner
+    canvas.drawLine(
+      Offset(rect.left, rect.top + cornerLength),
+      Offset(rect.left, rect.top),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(rect.left, rect.top),
+      Offset(rect.left + cornerLength, rect.top),
+      paint,
+    );
+
+    // Top-right corner
+    canvas.drawLine(
+      Offset(rect.right - cornerLength, rect.top),
+      Offset(rect.right, rect.top),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(rect.right, rect.top),
+      Offset(rect.right, rect.top + cornerLength),
+      paint,
+    );
+
+    // Bottom-left corner
+    canvas.drawLine(
+      Offset(rect.left, rect.bottom - cornerLength),
+      Offset(rect.left, rect.bottom),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(rect.left, rect.bottom),
+      Offset(rect.left + cornerLength, rect.bottom),
+      paint,
+    );
+
+    // Bottom-right corner
+    canvas.drawLine(
+      Offset(rect.right - cornerLength, rect.bottom),
+      Offset(rect.right, rect.bottom),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(rect.right, rect.bottom),
+      Offset(rect.right, rect.bottom - cornerLength),
+      paint,
+    );
+
+    // Center dot
+    canvas.drawCircle(rect.center, 4, fillPaint);
   }
 
   @override
