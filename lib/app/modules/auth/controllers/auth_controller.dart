@@ -1,3 +1,4 @@
+// lib/app/modules/auth/controllers/auth_controller.dart
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -9,63 +10,64 @@ class AuthController extends GetxController {
   final GoogleSignIn _googleSignIn = GoogleSignIn();
   var isLoading = false.obs;
 
-  Future<void> loginWithEmail(String email, String password) async {
-    try {
-      isLoading.value = true;
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-      Get.offAllNamed(Routes.DASHBOARD);
-    } catch (e) {
-      Get.snackbar(
-        'Login Failed',
-        e.toString(),
-        snackPosition: SnackPosition.BOTTOM,
-      );
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
-  Future<void> register(String email, String password) async {
-    try {
-      isLoading.value = true;
-      await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      Get.offAllNamed(Routes.DASHBOARD);
-    } catch (e) {
-      Get.snackbar(
-        'Registration Failed',
-        e.toString(),
-        snackPosition: SnackPosition.BOTTOM,
-      );
-    } finally {
-      isLoading.value = false;
-    }
+  @override
+  void onInit() {
+    super.onInit();
+    // Check if user is already logged in
+    _auth.authStateChanges().listen((User? user) {
+      if (user != null) {
+        Get.offAllNamed(Routes.DASHBOARD);
+      } else {
+        Get.offAllNamed(Routes.LOGIN);
+      }
+    });
   }
 
   Future<void> loginWithGoogle() async {
     try {
       isLoading.value = true;
+
+      // Trigger the authentication flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
       if (googleUser == null) {
-        // user canceled
+        // User canceled the sign-in
         isLoading.value = false;
         return;
       }
+
+      // Obtain the auth details from the request
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
+
+      // Create a new credential
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-      await _auth.signInWithCredential(credential);
-      Get.offAllNamed(Routes.DASHBOARD);
+
+      // Sign in to Firebase with the Google credentials
+      final UserCredential userCredential = await _auth.signInWithCredential(
+        credential,
+      );
+
+      if (userCredential.user != null) {
+        Get.offAllNamed(Routes.DASHBOARD);
+        Get.snackbar(
+          'Success',
+          'Welcome ${userCredential.user!.displayName}!',
+          snackPosition: SnackPosition.TOP,
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+        );
+      }
     } catch (e) {
       Get.snackbar(
-        'Google Sign-In Failed',
-        e.toString(),
-        snackPosition: SnackPosition.BOTTOM,
+        'Login Failed',
+        'Failed to sign in with Google: ${e.toString()}',
+        snackPosition: SnackPosition.TOP,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
       );
     } finally {
       isLoading.value = false;
@@ -73,8 +75,25 @@ class AuthController extends GetxController {
   }
 
   Future<void> logout() async {
-    await _auth.signOut();
-    await _googleSignIn.signOut();
-    Get.offAllNamed(Routes.LOGIN);
+    try {
+      await _auth.signOut();
+      await _googleSignIn.signOut();
+      Get.offAllNamed(Routes.LOGIN);
+      Get.snackbar(
+        'Success',
+        'Logged out successfully',
+        snackPosition: SnackPosition.TOP,
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+      );
+    } catch (e) {
+      Get.snackbar(
+        'Error',
+        'Failed to logout: ${e.toString()}',
+        snackPosition: SnackPosition.TOP,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
   }
 }
