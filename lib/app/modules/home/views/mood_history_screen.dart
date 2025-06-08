@@ -20,7 +20,7 @@ class MoodHistoryScreen extends StatelessWidget {
           fontWeight: FontWeight.bold,
         ),
       ),
-      
+
       body: Obx(() {
         if (controller.moodHistory.isEmpty) {
           return const Center(
@@ -31,9 +31,9 @@ class MoodHistoryScreen extends StatelessWidget {
           );
         }
 
-      Map<String, dynamic> mood = {'mood': 'happy'};
-      Map<String, dynamic> music = {'music': 'jazz'};
-      Map<String, dynamic> time = {'timestamp': '1685551234'};
+        Map<String, dynamic> mood = {'mood': 'happy'};
+        Map<String, dynamic> music = {'music': 'jazz'};
+        Map<String, dynamic> time = {'timestamp': '1685551234'};
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

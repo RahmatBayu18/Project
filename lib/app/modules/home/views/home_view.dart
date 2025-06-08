@@ -11,30 +11,29 @@ class HomeView extends GetView<HomeController> {
   Widget build(BuildContext context) {
     final HomeController c = Get.put(HomeController());
 
-    final pages = [
-      const MoodScannerScreen(),
-      const MoodHistoryScreen(),
-    ];
+    final pages = [const MoodScannerScreen(), const MoodHistoryScreen()];
 
-    return Obx(() => Scaffold(
-          body: pages[c.currentIndex.value],
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: c.currentIndex.value,
-            onTap: c.changeTab,
-            selectedItemColor: Colors.amber,
-            backgroundColor: Colors.black,
-            unselectedItemColor: Colors.grey,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.qr_code_scanner),
-                label: 'Scan Mood',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.history),
-                label: 'History',
-              ),
-            ],
-          ),
-        ));
+    return Obx(
+      () => Scaffold(
+        body: pages[c.currentIndex.value],
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: c.currentIndex.value,
+          onTap: c.changeTab,
+          selectedItemColor: Colors.amber,
+          backgroundColor: Colors.black,
+          unselectedItemColor: Colors.grey,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.qr_code_scanner),
+              label: 'Scan Mood',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.history),
+              label: 'History',
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

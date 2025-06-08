@@ -8,6 +8,8 @@ import 'dart:typed_data';
 
 import '../controllers/home_controller.dart';
 
+typedef FaceList = List<Face>;
+
 class MoodScannerScreen extends StatefulWidget {
   const MoodScannerScreen({Key? key}) : super(key: key);
 
@@ -16,23 +18,23 @@ class MoodScannerScreen extends StatefulWidget {
 }
 
 class _MoodScannerScreenState extends State<MoodScannerScreen> {
-  late CameraController _cameraController;
   late List<CameraDescription> _cameras;
+  late CameraController _cameraController;
   bool _isCameraInitialized = false;
-  bool _scanRequested = false; // Hanya untuk memicu update mood/musik
+  bool _scanRequested = false;
+  int _currentCameraIndex = 0;
 
-  String _mood = "No Face Detected"; // Default initial mood
-  String _music = "No recommendation"; // Default initial music
+  String _mood = 'No Face Detected';
+  String _music = 'No recommendation';
 
   final FaceDetector _faceDetector = FaceDetector(
     options: FaceDetectorOptions(
       enableClassification: true,
       enableTracking: true,
-      performanceMode: FaceDetectorMode.fast, // Menggunakan mode fast untuk real-time
+      performanceMode: FaceDetectorMode.fast,
     ),
   );
-
-  List<Face> _detectedFaces = []; // Variabel untuk menyimpan wajah terdeteksi
+  FaceList _detectedFaces = [];
 
   @override
   void initState() {
@@ -42,166 +44,108 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
 
   Future<void> _initializeCamera() async {
     _cameras = await availableCameras();
-    // Gunakan ResolutionPreset.high atau medium untuk keseimbangan performa real-time dan akurasi
-    _cameraController = CameraController(_cameras[0], ResolutionPreset.high); 
-
-    try {
-      await _cameraController.initialize();
-      if (!mounted) return;
-
-      _cameraController.startImageStream((image) => _processCameraImage(image));
-      setState(() {
-        _isCameraInitialized = true;
-      });
-      print("Camera Initialized: true");
-    } on CameraException catch (e) {
-      print("Error initializing camera: $e");
-      setState(() {
-        _isCameraInitialized = false;
-      });
+    if (_cameras.isNotEmpty) {
+      await _startController(_cameras[_currentCameraIndex]);
     }
   }
 
-  InputImage _inputImageFromCameraImage(CameraImage image) {
-    // Debugging: Lihat orientasi sensor kamera
-    // print("Camera Sensor Orientation: ${_cameraController.description.sensorOrientation}");
-
-    final InputImageRotation imageRotation =
-        InputImageRotationValue.fromRawValue(
-              _cameraController.description.sensorOrientation,
-            ) ??
-            InputImageRotation.rotation0deg;
-    // print("InputImage Rotation set to: $imageRotation");
-
-    final WriteBuffer allBytes = WriteBuffer();
-    for (Plane plane in image.planes) {
-      allBytes.putUint8List(plane.bytes);
+  Future<void> _startController(CameraDescription camera) async {
+    _cameraController = CameraController(camera, ResolutionPreset.high);
+    try {
+      await _cameraController.initialize();
+      await _cameraController.startImageStream(_processCameraImage);
+      if (!mounted) return;
+      setState(() => _isCameraInitialized = true);
+    } on CameraException catch (e) {
+      debugPrint('Error initializing camera: $e');
+      setState(() => _isCameraInitialized = false);
     }
-    final bytes = allBytes.done().buffer.asUint8List();
+  }
 
-    // Debugging: Lihat format gambar mentah
-    // print("CameraImage format raw: ${image.format.raw}");
-    // print("CameraImage format group: ${image.format.group}");
+  Future<void> _switchCamera() async {
+    if (_cameras.length < 2) return;
+    setState(() => _isCameraInitialized = false);
+    await _cameraController.stopImageStream();
+    await _cameraController.dispose();
+    _currentCameraIndex = (_currentCameraIndex + 1) % _cameras.length;
+    await _startController(_cameras[_currentCameraIndex]);
+  }
 
-    InputImageFormat inputImageFormat = InputImageFormat.nv21;
-
+  InputImage _inputImageFromCameraImage(CameraImage image) {
+    final rotation =
+        InputImageRotationValue.fromRawValue(
+          _cameraController.description.sensorOrientation,
+        ) ??
+        InputImageRotation.rotation0deg;
+    final buffer = WriteBuffer();
+    for (var plane in image.planes) {
+      buffer.putUint8List(plane.bytes);
+    }
+    final bytes = buffer.done().buffer.asUint8List();
     return InputImage.fromBytes(
       bytes: bytes,
       metadata: InputImageMetadata(
         size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: imageRotation,
-        format: inputImageFormat,
+        rotation: rotation,
+        format: InputImageFormat.nv21,
         bytesPerRow: image.planes.first.bytesPerRow,
       ),
     );
   }
 
   Future<void> _processCameraImage(CameraImage image) async {
-    // --- PENTING: TIDAK ADA LAGI `if (!_scanRequested) return;` di sini ---
-    // Ini memastikan ML Kit selalu memproses gambar untuk deteksi wajah real-time.
-
-    if (image.format.group != ImageFormatGroup.yuv420 && image.format.group != ImageFormatGroup.bgra8888) {
-      print("Unsupported image format group: ${image.format.group}");
-      // Set _detectedFaces kosong jika format tidak didukung untuk mencegah error rendering
-      if (_detectedFaces.isNotEmpty) {
-        setState(() {
-          _detectedFaces = [];
-        });
-      }
-      return;
-    }
-
+    if (!_isCameraInitialized) return;
     final inputImage = _inputImageFromCameraImage(image);
-
     try {
-      final List<Face> faces = await _faceDetector.processImage(inputImage);
-      
-      // Update _detectedFaces secara real-time untuk FacePainter
-      if (_detectedFaces.length != faces.length || !_listEquals(_detectedFaces, faces)) {
-         setState(() {
-          _detectedFaces = faces; 
-         });
+      final faces = await _faceDetector.processImage(inputImage);
+      if (faces.length != _detectedFaces.length) {
+        setState(() => _detectedFaces = faces);
       }
-     
-      // Debugging: Lihat berapa wajah yang terdeteksi secara real-time
-      // print("ML Kit detected faces count: ${faces.length}");
-
-      // Logika deteksi mood, hanya berjalan jika _scanRequested adalah true
       if (_scanRequested) {
+        String detectedMood;
+        String recommendedMusic;
         if (faces.isNotEmpty) {
-          final Face face = faces.first;
-          String detectedMood = "Neutral";
-          String recommendedMusic = "Chill music";
-
-          // --- Logika Deteksi Mood Anda ---
-          if (face.smilingProbability != null && face.smilingProbability! > 0.7) {
-            detectedMood = "Happy";
-            recommendedMusic = "Upbeat Pop";
-          } else if (face.leftEyeOpenProbability != null &&
-              face.leftEyeOpenProbability! < 0.3 &&
-              face.rightEyeOpenProbability != null &&
-              face.rightEyeOpenProbability! < 0.3) {
-            detectedMood = "Sleepy";
-            recommendedMusic = "Calm Instrumental";
-          } else if (face.leftEyeOpenProbability != null &&
-              face.leftEyeOpenProbability! > 0.7 &&
-              face.rightEyeOpenProbability != null &&
-              face.rightEyeOpenProbability! > 0.7 &&
-              face.smilingProbability != null &&
-              face.smilingProbability! < 0.2) {
-            detectedMood = "Neutral/Serious";
-            recommendedMusic = "Focus Music";
+          final face = faces.first;
+          final smile = face.smilingProbability ?? 0;
+          final leftEye = face.leftEyeOpenProbability ?? 0;
+          final rightEye = face.rightEyeOpenProbability ?? 0;
+          if (smile > 0.7) {
+            detectedMood = 'Happy';
+            recommendedMusic = 'Upbeat Pop';
+          } else if (leftEye < 0.3 && rightEye < 0.3) {
+            detectedMood = 'Sleepy';
+            recommendedMusic = 'Calm Instrumental';
+          } else if (leftEye > 0.7 && rightEye > 0.7 && smile < 0.2) {
+            detectedMood = 'Neutral/Serious';
+            recommendedMusic = 'Focus Music';
+          } else {
+            detectedMood = 'Neutral';
+            recommendedMusic = 'Chill music';
           }
-          // --- Akhir Logika Deteksi Mood ---
-
-          // Hanya update mood di UI jika ada perubahan
-          if (_mood != detectedMood) {
-            setState(() {
-              _mood = detectedMood;
-              _music = recommendedMusic;
-            });
-            if (Get.isRegistered<HomeController>()) {
-              Get.find<HomeController>().addMood(_mood, _music);
-            }
-          }
-          _scanRequested = false; // Reset permintaan scan mood setelah deteksi
         } else {
-          // Jika tidak ada wajah saat scan mood diminta
-          setState(() {
-            _mood = "No Face Detected";
-            _music = "No recommendation";
-          });
-          _scanRequested = false; // Reset permintaan scan mood
+          detectedMood = 'No Face Detected';
+          recommendedMusic = 'No recommendation';
         }
-      }
-    } catch (e) {
-      print("Error during face detection: $e");
-      // Pastikan kotak juga hilang jika ada error pemrosesan
-      if (_detectedFaces.isNotEmpty) {
         setState(() {
-          _detectedFaces = [];
+          _mood = detectedMood;
+          _music = recommendedMusic;
         });
+        // Simpan record
+        if (Get.isRegistered<HomeController>()) {
+          Get.find<HomeController>().addMood(_mood, _music);
+        }
+        _scanRequested = false;
       }
-      // Jika terjadi error, dan scan sedang diminta, berikan feedback
+    } catch (e, stk) {
+      debugPrint('Error during face detection: $e\n$stk');
       if (_scanRequested) {
         setState(() {
-          _mood = "Error";
-          _music = "Please retry scan";
+          _mood = 'Error detecting';
+          _music = 'Please retry';
         });
         _scanRequested = false;
       }
     }
-  }
-
-  // Helper untuk membandingkan list Face (bukan hanya referensi objek)
-  bool _listEquals(List<Face> list1, List<Face> list2) {
-    if (list1.length != list2.length) return false;
-    for (int i = 0; i < list1.length; i++) {
-      if (list1[i].boundingBox != list2[i].boundingBox) {
-        return false;
-      }
-    }
-    return true;
   }
 
   @override
@@ -214,217 +158,181 @@ class _MoodScannerScreenState extends State<MoodScannerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-
+    final width = MediaQuery.of(context).size.width;
+    final height = MediaQuery.of(context).size.height;
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-      body: Center(
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (_isCameraInitialized)
-              Container(
-                height: double.infinity,
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  color: Colors.black,
-                ),
-                child: ClipRRect(
-                  child: SizedBox.expand(
-                    child: FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: _cameraController.value.previewSize!.height,
-                        height: _cameraController.value.previewSize!.width,
-                        child: CameraPreview(_cameraController),
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            else
-              Container(
-                height: double.infinity,
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  color: Colors.black,
-                ),
-                child: const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
+      body: Stack(
+        children: [
+          if (_isCameraInitialized)
+            SizedBox(
+              width: width,
+              height: height,
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _cameraController.value.previewSize!.height,
+                  height: _cameraController.value.previewSize!.width,
+                  child: CameraPreview(_cameraController),
                 ),
               ),
-
-            // CustomPaint untuk menggambar kotak deteksi wajah
-            // Sekarang selalu aktif jika kamera siap dan ada wajah terdeteksi
-            if (_isCameraInitialized && _detectedFaces.isNotEmpty)
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: FacePainter(
-                    _detectedFaces,
-                    // imageSize: Ukuran gambar yang diproses oleh ML Kit
-                    Size(
-                      _cameraController.value.previewSize!.height,
-                      _cameraController.value.previewSize!.width,
-                    ),
-                    // widgetSize: Ukuran aktual dari area tampilan CameraPreview (ukuran layar penuh)
-                    Size(screenWidth, screenHeight),
-                    _cameraController.description.lensDirection == CameraLensDirection.front, // Teruskan info kamera depan
+            )
+          else
+            const Center(child: CircularProgressIndicator()),
+          if (_isCameraInitialized && _detectedFaces.isNotEmpty)
+            Positioned.fill(
+              child: CustomPaint(
+                painter: FacePainter(
+                  _detectedFaces,
+                  Size(
+                    _cameraController.value.previewSize!.height,
+                    _cameraController.value.previewSize!.width,
                   ),
-                ),
-              ),
-
-            // Kotak putih untuk menampilkan hasil detektor
-            Positioned(
-              top: 50,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                width: 320,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.95),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 8,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Mood: $_mood",
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Rekomendasi Musik:\n$_music",
-                      style: const TextStyle(fontSize: 16),
-                    ),
-                  ],
+                  Size(width, height),
+                  _cameraController.description.lensDirection ==
+                      CameraLensDirection.front,
                 ),
               ),
             ),
-
-            // Tombol Scan Mood
-            Positioned(
-              bottom: 100,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
+          Positioned(top: 50, left: 20, right: 20, child: _buildResultCard()),
+          Positioned(
+            bottom: 100,
+            left: 40,
+            right: 40,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _switchCamera,
+                  icon: const Icon(Icons.cameraswitch, color: Colors.amber),
+                  label: const Text(
+                    'Switch',
+                    style: TextStyle(color: Colors.amber),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                 ),
-                icon: const Icon(Icons.search),
-                label: const Text(
-                  "Scan Mood",
-                  style: TextStyle(fontSize: 16, color: Colors.amber),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    if (_isCameraInitialized) {
+                      setState(() {
+                        _scanRequested = true;
+                        _mood = 'Scanning...';
+                        _music = 'Please wait...';
+                      });
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Camera not ready')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.search, color: Colors.amber),
+                  label: const Text(
+                    'Scan Mood',
+                    style: TextStyle(color: Colors.amber),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
                 ),
-                onPressed: () {
-                  if (_isCameraInitialized) {
-                    setState(() {
-                      _scanRequested = true; // Mengaktifkan permintaan scan mood
-                      _mood = "Scanning..."; // Umpan balik visual di kotak putih
-                      _music = "Please wait...";
-                    });
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Camera is not ready yet.')),
-                    );
-                  }
-                },
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultCard() {
+    final isError = _mood.toLowerCase().startsWith('error');
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Mood: $_mood',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: isError ? Colors.red : Colors.black,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Music Recommendation:\n$_music',
+            style: TextStyle(
+              fontSize: 16,
+              color: isError ? Colors.redAccent : Colors.black87,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class FacePainter extends CustomPainter {
-  final List<Face> faces;
-  final Size imageSize;   // Ukuran gambar yang diproses ML Kit
-  final Size widgetSize;  // Ukuran widget CameraPreview di layar
-  final bool isFrontCamera; // Menunjukkan apakah kamera depan digunakan
+  final FaceList faces;
+  final Size imageSize;
+  final Size widgetSize;
+  final bool isFront;
 
-  FacePainter(this.faces, this.imageSize, this.widgetSize, this.isFrontCamera);
+  FacePainter(this.faces, this.imageSize, this.widgetSize, this.isFront);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint =
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0
+          ..strokeWidth = 3
           ..color = Colors.greenAccent;
-
-    // Perhitungan transformasi untuk BoxFit.cover
-    final double imageAspectRatio = imageSize.width / imageSize.height;
-    final double widgetAspectRatio = widgetSize.width / widgetSize.height;
-
-    double scaleX, scaleY;
-    double offsetX = 0;
-    double offsetY = 0;
-
-    if (imageAspectRatio > widgetAspectRatio) {
+    final imageAR = imageSize.width / imageSize.height;
+    final widgetAR = widgetSize.width / widgetSize.height;
+    double scaleX, scaleY, offsetX = 0, offsetY = 0;
+    if (imageAR > widgetAR) {
       scaleY = widgetSize.height / imageSize.height;
       scaleX = scaleY;
-      offsetX = (widgetSize.width - (imageSize.width * scaleX)) / 2;
+      offsetX = (widgetSize.width - imageSize.width * scaleX) / 2;
     } else {
       scaleX = widgetSize.width / imageSize.width;
       scaleY = scaleX;
-      offsetY = (widgetSize.height - (imageSize.height * scaleY)) / 2;
+      offsetY = (widgetSize.height - imageSize.height * scaleY) / 2;
     }
-
-    for (final face in faces) {
-      double transformedLeft = face.boundingBox.left * scaleX + offsetX;
-      double transformedRight = face.boundingBox.right * scaleX + offsetX;
-      double transformedTop = face.boundingBox.top * scaleY + offsetY;
-      double transformedBottom = face.boundingBox.bottom * scaleY + offsetY;
-
-      // --- Logika Mirroring untuk Kamera Depan ---
-      if (isFrontCamera) {
-        // Ini akan membalik koordinat X secara horizontal
-        double tempLeft = transformedLeft;
-        transformedLeft = widgetSize.width - transformedRight;
-        transformedRight = widgetSize.width - tempLeft;
+    for (var face in faces) {
+      double left = face.boundingBox.left * scaleX + offsetX;
+      double right = face.boundingBox.right * scaleX + offsetX;
+      double top = face.boundingBox.top * scaleY + offsetY;
+      double bottom = face.boundingBox.bottom * scaleY + offsetY;
+      if (isFront) {
+        final temp = left;
+        left = widgetSize.width - right;
+        right = widgetSize.width - temp;
       }
-      // --- Akhir Logika Mirroring ---
-
-      final rect = Rect.fromLTRB(
-        transformedLeft,
-        transformedTop,
-        transformedRight,
-        transformedBottom,
-      );
-      canvas.drawRect(rect, paint);
+      canvas.drawRect(Rect.fromLTRB(left, top, right, bottom), paint);
     }
   }
 
   @override
-  bool shouldRepaint(FacePainter oldDelegate) {
-    return oldDelegate.faces.length != faces.length ||
-           !_listDeepEquals(oldDelegate.faces, faces) ||
-           oldDelegate.imageSize != imageSize ||
-           oldDelegate.widgetSize != widgetSize ||
-           oldDelegate.isFrontCamera != isFrontCamera; // Tambahkan perbandingan isFrontCamera
-  }
-
-  // Helper function untuk membandingkan list Face secara mendalam
-  bool _listDeepEquals(List<Face> list1, List<Face> list2) {
-    if (list1.length != list2.length) return false;
-    for (int i = 0; i < list1.length; i++) {
-      if (list1[i].boundingBox != list2[i].boundingBox) {
-        return false;
-      }
+  bool shouldRepaint(covariant FacePainter old) {
+    if (old.faces.length != faces.length) return true;
+    for (int i = 0; i < faces.length; i++) {
+      if (faces[i].boundingBox != old.faces[i].boundingBox) return true;
     }
-    return true;
+    return old.isFront != isFront;
   }
 }

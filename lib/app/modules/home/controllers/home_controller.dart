@@ -1,27 +1,35 @@
 import 'package:get/get.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../../../models/mood_record.dart';
+import '../../../../services/mood_services.dart';
 
 class HomeController extends GetxController {
+  late final MoodService _service;
+  var moodHistory = <MoodRecord>[].obs;
   var currentIndex = 0.obs;
 
-  // Simulasi histori mood
-  var moodHistory =
-      <Map<String, String>>[
-        {
-          "mood": "Happy",
-          "music": "Pharrell Williams - Happy",
-          "timestamp": "2025-06-07 14:23",
-        },
-      ].obs;
+  @override
+  void onInit() {
+    super.onInit();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _service = MoodService(user.uid);
+      _service.streamMoodHistory().listen((records) {
+        moodHistory.value = records;
+      });
+    }
+  }
 
   void addMood(String mood, String music) {
-    moodHistory.add({
-      'mood': mood,
-      'music': music,
-      'timestamp': DateTime.now().toString(),
-    });
+    if (_service != null) {
+      final record = MoodRecord(
+        mood: mood,
+        music: music,
+        timestamp: DateTime.now(),
+      );
+      _service.addMood(record);
+    }
   }
 
-  void changeTab(int index) {
-    currentIndex.value = index;
-  }
+  void changeTab(int index) => currentIndex.value = index;
 }
