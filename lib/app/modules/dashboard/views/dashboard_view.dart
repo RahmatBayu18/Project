@@ -220,11 +220,13 @@ class DashboardView extends StatelessWidget {
                                     color: Colors.white.withOpacity(0.3),
                                   ),
                                   Expanded(
-                                    child: _buildQuickStat(
-                                      'Streak',
-                                      RxInt(_getStreak(dc)),
-                                      Icons.local_fire_department_outlined,
-                                    ),
+                                    child: Obx(() {
+                                      return _buildQuickStat(
+                                        'Streak',
+                                        RxInt(_getStreak(dc)),
+                                        Icons.local_fire_department_outlined,
+                                      );
+                                    }),
                                   ),
                                 ],
                               ),
