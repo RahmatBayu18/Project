@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "240839592358",
+    "project_id": "mood-tracker-d23c5",
+    "storage_bucket": "mood-tracker-d23c5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:240839592358:android:6268a321bac41ed65d2767",
+        "android_client_info": {
+          "package_name": "com.moddetector.mood_detector"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "240839592358-fbjpls1g25sfds2rhh4061nc64giuh2p.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.moddetector.mood_detector",
+            "certificate_hash": "6caba449e083bccdb520d23b991ead84f03190e6"
+          }
+        },
+        {
+          "client_id": "240839592358-qldig4d1uqm9vdcdh519050lvn1jubag.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAyrkJNhU73Hfdz4W-tCC2kPHv-RKh-gAk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "240839592358-qldig4d1uqm9vdcdh519050lvn1jubag.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
