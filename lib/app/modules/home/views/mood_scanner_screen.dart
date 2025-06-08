@@ -7,6 +7,7 @@ import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'dart:typed_data';
 
 import '../controllers/home_controller.dart';
+import '../../home/views/mood_history_screen.dart';
 
 typedef FaceList = List<Face>;
 
@@ -70,9 +71,29 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
   }
 
   Future<void> _initializeCamera() async {
-    _cameras = await availableCameras();
-    if (_cameras.isNotEmpty) {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) {
+        throw CameraException(
+          'No cameras found',
+          'Ensure camera permission is granted.',
+        );
+      }
+
+      _currentCameraIndex = _cameras.indexWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.front,
+      );
+
+      if (_currentCameraIndex == -1) {
+        _currentCameraIndex = _cameras.indexWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.back,
+        );
+      }
+
       await _startController(_cameras[_currentCameraIndex]);
+    } catch (e) {
+      debugPrint('Error initializing camera: $e');
+      setState(() => _isCameraInitialized = false);
     }
   }
 
@@ -81,8 +102,12 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
     try {
       await _cameraController.initialize();
       await _cameraController.startImageStream(_processCameraImage);
+
       if (!mounted) return;
-      setState(() => _isCameraInitialized = true);
+
+      setState(() {
+        _isCameraInitialized = true;
+      });
     } on CameraException catch (e) {
       debugPrint('Error initializing camera: $e');
       setState(() => _isCameraInitialized = false);
@@ -121,7 +146,11 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
   }
 
   Future<void> _processCameraImage(CameraImage image) async {
-    if (!_isCameraInitialized) return;
+    if (!_isCameraInitialized) {
+      debugPrint('Camera not initialized yet');
+      return;
+    }
+
     final inputImage = _inputImageFromCameraImage(image);
     try {
       final faces = await _faceDetector.processImage(inputImage);
@@ -242,6 +271,35 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final height = MediaQuery.of(context).size.height;
+
+    if (!_isCameraInitialized) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Container(
+          color: Colors.black,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                  strokeWidth: 3,
+                ),
+                SizedBox(height: 20),
+                Text(
+                  'Initializing Camera...',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -454,7 +512,8 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
                   icon: Icons.history,
                   label: 'History',
                   onPressed: () {
-                    Get.find<HomeController>().changeTab(1);
+                    // Navigasi langsung ke MoodHistoryScreen tanpa dependency ke HomeController
+                    Get.to(() => const MoodHistoryScreen());
                   },
                   isSecondary: true,
                 ),
