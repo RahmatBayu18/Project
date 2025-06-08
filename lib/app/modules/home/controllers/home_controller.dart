@@ -20,12 +20,13 @@ class HomeController extends GetxController {
     }
   }
 
-  void addMood(String mood, String music) {
+  void addMood(String mood, String music, {String note = ''}) {
     if (_service != null) {
       final record = MoodRecord(
         mood: mood,
         music: music,
         timestamp: DateTime.now(),
+        note: note, // Tambahkan note
       );
       _service.addMood(record);
     }
