@@ -204,6 +204,18 @@ class MoodHistoryScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+
+                  if (record.note.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Text(
+                        record.note,
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             );

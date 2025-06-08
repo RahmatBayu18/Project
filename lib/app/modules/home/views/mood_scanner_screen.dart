@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'dart:typed_data';
+import 'package:lottie/lottie.dart';
 
 import '../controllers/home_controller.dart';
 import '../../home/views/mood_history_screen.dart';
@@ -24,10 +25,13 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
   late CameraController _cameraController;
   bool _isCameraInitialized = false;
   bool _scanRequested = false;
+  bool _isProcessing = false;
   int _currentCameraIndex = 0;
+  bool _isQuickScan = false;
 
   String _mood = 'Ready to scan';
   String _music = 'Position your face in the frame';
+  String _note = '';
 
   late AnimationController _pulseController;
   late AnimationController _scanController;
@@ -146,8 +150,7 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
   }
 
   Future<void> _processCameraImage(CameraImage image) async {
-    if (!_isCameraInitialized) {
-      debugPrint('Camera not initialized yet');
+    if (!_isCameraInitialized || _isProcessing) {
       return;
     }
 
@@ -157,7 +160,11 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
       if (faces.length != _detectedFaces.length) {
         setState(() => _detectedFaces = faces);
       }
-      if (_scanRequested) {
+
+      // Only process if it's a detail scan (not quick scan)
+      if (_scanRequested && !_isProcessing && !_isQuickScan) {
+        _isProcessing = true;
+
         String detectedMood;
         String recommendedMusic;
         if (faces.isNotEmpty) {
@@ -182,31 +189,172 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
           detectedMood = 'No Face Detected';
           recommendedMusic = 'Please position your face properly';
         }
+
         setState(() {
           _mood = detectedMood;
           _music = recommendedMusic;
         });
-        // Save record
-        if (Get.isRegistered<HomeController>()) {
-          Get.find<HomeController>().addMood(_mood, _music);
-        }
+
+        // Reset scan state
         _scanRequested = false;
         _scanController.reset();
 
         // Haptic feedback
         HapticFeedback.mediumImpact();
+
+        // Only show dialog for detail scan
+        if (mounted && detectedMood != 'No Face Detected') {
+          await _showNoteDialog(context, detectedMood, recommendedMusic);
+        }
+
+        _isProcessing = false;
       }
     } catch (e, stk) {
       debugPrint('Error during face detection: $e\n$stk');
-      if (_scanRequested) {
+      if (_scanRequested && !_isQuickScan) {
         setState(() {
           _mood = 'Error detecting';
           _music = 'Please retry scanning';
         });
         _scanRequested = false;
         _scanController.reset();
+        _isProcessing = false;
       }
     }
+  }
+
+  Future<void> _showNoteDialog(
+    BuildContext context,
+    String mood,
+    String music,
+  ) async {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Tambahkan Catatan'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Mood Terdeteksi: $mood',
+                  style: TextStyle(color: _getMoodColor(mood)),
+                ),
+                const SizedBox(height: 10),
+                Text('Rekomendasi Musik: $music'),
+                const SizedBox(height: 20),
+                TextField(
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Catatan (opsional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                  onChanged: (value) => _note = value,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _saveMoodRecord(mood, music);
+                },
+                child: const Text('Simpan'),
+              ),
+              // Tambahan tombol Skip untuk melewati catatan
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _note = '';
+                  _saveMoodRecord(mood, music);
+                },
+                child: const Text('Skip'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  void _saveMoodRecord(String mood, String music) {
+    if (Get.isRegistered<HomeController>()) {
+      Get.find<HomeController>().addMood(mood, music, note: _note);
+    }
+    setState(() {
+      _mood = mood;
+      _music = music;
+      _note = ''; // Reset catatan
+    });
+  }
+
+  void _performQuickScan() async {
+    if (!_isCameraInitialized || _scanRequested || _isProcessing) return;
+
+    setState(() {
+      _isQuickScan = true; // Set quick scan flag
+      _scanRequested = true;
+      _mood = 'Scanning...';
+      _music = 'Analyzing your expression...';
+    });
+    _scanController.forward();
+    HapticFeedback.lightImpact();
+
+    // Auto-save tanpa dialog setelah 2 detik
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (_detectedFaces.isNotEmpty && mounted) {
+      final face = _detectedFaces.first;
+      final smile = face.smilingProbability ?? 0;
+      final leftEye = face.leftEyeOpenProbability ?? 0;
+      final rightEye = face.rightEyeOpenProbability ?? 0;
+
+      String detectedMood;
+      String recommendedMusic;
+
+      if (smile > 0.7) {
+        detectedMood = 'Happy';
+        recommendedMusic = 'Upbeat Pop';
+      } else if (leftEye < 0.3 && rightEye < 0.3) {
+        detectedMood = 'Sleepy';
+        recommendedMusic = 'Calm Instrumental';
+      } else if (leftEye > 0.7 && rightEye > 0.7 && smile < 0.2) {
+        detectedMood = 'Neutral/Serious';
+        recommendedMusic = 'Focus Music';
+      } else {
+        detectedMood = 'Neutral';
+        recommendedMusic = 'Chill music';
+      }
+
+      // Simpan langsung tanpa dialog
+      if (Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().addMood(detectedMood, recommendedMusic);
+      }
+
+      setState(() {
+        _mood = detectedMood;
+        _music = recommendedMusic;
+      });
+
+      // Show brief success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Mood saved: $detectedMood'),
+          backgroundColor: _getMoodColor(detectedMood),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+
+    setState(() {
+      _scanRequested = false;
+      _isQuickScan = false; // Reset quick scan flag
+    });
+    _scanController.reset();
   }
 
   String _getMoodEmoji(String mood) {
@@ -316,34 +464,6 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
                   width: _cameraController.value.previewSize!.height,
                   height: _cameraController.value.previewSize!.width,
                   child: CameraPreview(_cameraController),
-                ),
-              ),
-            )
-          else
-            Container(
-              width: width,
-              height: height,
-              color: Colors.black,
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Color(0xFF6366F1),
-                      ),
-                      strokeWidth: 3,
-                    ),
-                    SizedBox(height: 20),
-                    Text(
-                      'Initializing Camera...',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
@@ -488,41 +608,88 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
             ),
           ),
 
-          // Bottom Controls
+          // Bottom Controls - Updated dengan 2 mode scan
           Positioned(
             bottom: MediaQuery.of(context).padding.bottom + 40,
-            left: 40,
-            right: 40,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+            left: 20,
+            right: 20,
+            child: Column(
               children: [
-                // Switch Camera Button
-                _buildControlButton(
-                  icon: Icons.flip_camera_ios,
-                  label: 'Switch',
-                  onPressed: _cameras.length > 1 ? _switchCamera : null,
-                  isSecondary: true,
+                // Scan buttons row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Quick Scan (no dialog)
+                    _buildScanButton(
+                      icon: Icons.flash_on,
+                      label: 'Quick Scan',
+                      onPressed: _performQuickScan,
+                      color: const Color(0xFF10B981),
+                    ),
+
+                    // Regular Scan (with dialog)
+                    _buildScanButton(
+                      icon: Icons.center_focus_strong,
+                      label: 'Detail Scan',
+                      onPressed: _performDetailScan,
+                      color: const Color(0xFF6366F1),
+                    ),
+                  ],
                 ),
 
-                // Scan Button
-                _buildScanButton(),
+                const SizedBox(height: 20),
 
-                // History Button
-                _buildControlButton(
-                  icon: Icons.history,
-                  label: 'History',
-                  onPressed: () {
-                    // Navigasi langsung ke MoodHistoryScreen tanpa dependency ke HomeController
-                    Get.to(() => const MoodHistoryScreen());
-                  },
-                  isSecondary: true,
+                // Other controls
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    // Switch Camera Button
+                    _buildControlButton(
+                      icon: Icons.flip_camera_ios,
+                      label: 'Switch',
+                      onPressed: _cameras.length > 1 ? _switchCamera : null,
+                      isSecondary: true,
+                    ),
+
+                    // History Button
+                    _buildControlButton(
+                      icon: Icons.history,
+                      label: 'History',
+                      onPressed: () {
+                        Get.to(() => const MoodHistoryScreen());
+                      },
+                      isSecondary: true,
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
+
+          if (_scanRequested)
+            Center(
+              child: Lottie.asset(
+                'assets/animations/scanning.json',
+                width: 200,
+                height: 200,
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  void _performDetailScan() {
+    if (_isCameraInitialized && !_scanRequested && !_isProcessing) {
+      setState(() {
+        _isQuickScan = false; // Set detail scan flag
+        _scanRequested = true;
+        _mood = 'Scanning...';
+        _music = 'Analyzing your expression...';
+      });
+      _scanController.forward();
+      HapticFeedback.lightImpact();
+    }
   }
 
   Widget _buildStatusCard() {
@@ -639,70 +806,44 @@ class _MoodScannerScreenState extends State<MoodScannerScreen>
     );
   }
 
-  Widget _buildScanButton() {
+  Widget _buildScanButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required Color color,
+  }) {
     return GestureDetector(
-      onTap: () {
-        if (_isCameraInitialized && !_scanRequested) {
-          setState(() {
-            _scanRequested = true;
-            _mood = 'Scanning...';
-            _music = 'Analyzing your expression...';
-          });
-          _scanController.forward();
-          HapticFeedback.lightImpact();
-        } else if (!_isCameraInitialized) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Camera not ready'),
-              backgroundColor: Colors.red[600],
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
-        }
-      },
+      onTap: onPressed,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 80,
-        height: 80,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         decoration: BoxDecoration(
-          gradient:
-              _scanRequested
-                  ? LinearGradient(
-                    colors: [const Color(0xFF8B5CF6), const Color(0xFF6366F1)],
-                  )
-                  : LinearGradient(
-                    colors: [const Color(0xFF6366F1), const Color(0xFF8B5CF6)],
-                  ),
-          borderRadius: BorderRadius.circular(40),
+          gradient: LinearGradient(colors: [color, color.withOpacity(0.8)]),
+          borderRadius: BorderRadius.circular(30),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF6366F1).withOpacity(0.4),
-              blurRadius: 20,
+              color: color.withOpacity(0.4),
+              blurRadius: 15,
               offset: const Offset(0, 8),
             ),
           ],
-          border: Border.all(color: Colors.white.withOpacity(0.3), width: 3),
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
         ),
-        child:
-            _scanRequested
-                ? const Center(
-                  child: SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      strokeWidth: 3,
-                    ),
-                  ),
-                )
-                : const Icon(
-                  Icons.center_focus_strong,
-                  color: Colors.white,
-                  size: 40,
-                ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
